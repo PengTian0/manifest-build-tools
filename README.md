@@ -133,7 +133,7 @@ repositories: [
        "branch": "xxx",                                           
        "checked-out-directory-name": "xxx", 
        "commit-id": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
-       "repository": "https://eos2git.cec.lab.emc.com/xxx/xxx.git" 
+       "repository": "https://github.com/xxx/xxx.git" 
    }
    ...
 ]
@@ -150,11 +150,11 @@ repositories: [
         So, branch and commit-id should be provided at least one. Below is an invalid example:
         ```
         {
-            "repository": "https://eos2git.cec.lab.emc.com/xxx/xxx.git"
+            "repository": "https://github.com/xxx/xxx.git"
         }
         ```
 
-    * **checked-out-directory-name**: the local directory name for check out the repository, such as "onrack" for repository "https://eos2git.cec.lab.emc.com/OnRack/onrack-base.git"
+    * **checked-out-directory-name**: the local directory name for check out the repository, such as "onrack" for repository "https://github.com/OnRack/onrack-base.git"
 
 
 
@@ -172,7 +172,7 @@ repositories: [
         "command": "xxx",
         "commit-id": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
         "purpose": "xxx",
-        "repository": "https://eos2git.cec.lab.emc.com/xxx/xxx.git",
+        "repository": "https://github.com/xxx/xxx.git",
         "running-label": "xxx", 
         "working-directory": "xxx",
         "downstream-jobs": [
