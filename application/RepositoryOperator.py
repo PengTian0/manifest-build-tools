@@ -3,6 +3,7 @@ import os
 import config
 from gitbits import GitBit
 from ParallelTasks import ParallelTasks
+import datetime
 
 def strip_suffix(text, suffix):
     """
@@ -275,7 +276,7 @@ class RepoOperator(object):
                 raise RuntimeError("Failed to clone repositories")
 
     
-    def clone_repo(self, repo_url, dest_dir):
+    def clone_repo(self, repo_url, dest_dir, repo_commit="HEAD"):
         """
         check out a repository to dest directory from the repository url
         :param repo_url: the url of repository, it is required
@@ -284,11 +285,25 @@ class RepoOperator(object):
         """
         repo = {}
         repo["repository"] = repo_url
+        repo["commit-id"] = repo_commit
         repo_list = [repo]
         self.clone_repo_list(repo_list, dest_dir)
         
         repo_directory_name = strip_suffix(os.path.basename(repo_url), ".git")
         return os.path.join(dest_dir, repo_directory_name)
+
+    def get_lastest_commit_date(self, repo_dir):
+        """
+        :param repo_dir: path of the repository
+        :return: commit-date
+        """
+        if repo_dir is None or not os.path.isdir(repo_dir):
+            raise RuntimeError("The repository directory is not a directory")
+        code, output, error = self.git.run(['show', '-s', '--pretty=format:%ci'], directory=repo_dir)
+        if code == 0:
+            return output.strip()
+        else:
+            raise RuntimeError("Unable to get commit date in directory {0}".format(repo_dir))
 
     def get_lastest_commit_id(self, repo_dir):
         """
