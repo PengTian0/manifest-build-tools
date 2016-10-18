@@ -29,9 +29,8 @@ class VersionGenerator(object):
         """
 
         try:
-            date_string = self.repo_operator.get_lastest_commit_date(self._repo_dir)
-            naive_date_str, _, offset_str = date_string.rpartition(' ')
-            date = datetime.datetime.strptime(naive_date_str, '%Y-%m-%d %H:%M:%S').strftime('%Y%m%d%H%M%S')
+            ts_str = self.repo_operator.get_lastest_commit_date(self._repo_dir)
+            date = datetime.datetime.utcfromtimestamp(int(ts_str)).strftime('%Y%m%d%H%M%SZ')
             commit_id = self.repo_operator.get_lastest_commit_id(self._repo_dir)
             version = "{date}-{commit}".format(date=date, commit=commit_id[0:7])
             return version              

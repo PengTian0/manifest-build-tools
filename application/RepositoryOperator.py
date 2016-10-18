@@ -3,7 +3,6 @@ import os
 import config
 from gitbits import GitBit
 from ParallelTasks import ParallelTasks
-import datetime
 
 def strip_suffix(text, suffix):
     """
@@ -299,7 +298,7 @@ class RepoOperator(object):
         """
         if repo_dir is None or not os.path.isdir(repo_dir):
             raise RuntimeError("The repository directory is not a directory")
-        code, output, error = self.git.run(['show', '-s', '--pretty=format:%ci'], directory=repo_dir)
+        code, output, error = self.git.run(['show', '-s', '--pretty=format:%ct'], directory=repo_dir)
         if code == 0:
             return output.strip()
         else:

@@ -1,5 +1,15 @@
 #!/usr/bin/env python
 
+"""
+usage:
+./manifest-build-tools/HWIMO-BUILD manifest-build-tools/application/update_rackhd_version.py \
+--manifest-repo-url https://github.com/PengTian0/build-manifests \
+--manifest-name rackhd-devel \
+--builddir b \
+--git-credential https://github.com/PengTian0,GITHUB \
+--force
+
+"""
 import argparse
 import sys
 import os
@@ -98,17 +108,30 @@ class UpdateRackhdVersion(object):
         os.makedirs(self._builddir)
 
     def clone_manifest(self):
-        if self._manifest_url and self._manifest_commit:
-            manifest_repo_dir = self.repo_operator.clone_repo(self._manifest_url, self._builddir, repo_commit=self._manifest_commit)
-            self._manifest_repo_dir =  manifest_repo_dir
-            self._initial_manifest_actions()
+        """
+        clone manifest to build dir
+        :return: None
+        """
+        try:
+            if self._manifest_url and self._manifest_commit:
+                manifest_repo_dir = self.repo_operator.clone_repo(self._manifest_url, self._builddir, repo_commit=self._manifest_commit)
+                self._manifest_repo_dir =  manifest_repo_dir
+                self._initial_manifest_actions()
 
-        else:
-            print "manifest url or manifest commit can not be null"
+            else:
+                print "manifest url or manifest commit can not be null"
+                sys.exit(1)
+        except Exception,e:
+            print "Failed to clone manifest due to {0}. \n Exiting now...".format(e)
             sys.exit(1)
 
 
     def _initial_manifest_actions(self):
+        """
+        initial an instance of Manifest_Actions
+        the instance is used to clone repositories in manifest file
+        :return: None
+        """
         self._manifest_path = os.path.join(self._manifest_repo_dir, self._manifest_name)
         self._manifest_builddir = os.path.join(self._builddir, self._builddir)
         self.manifest_actions = ManifestActions(self._manifest_path, self._manifest_builddir)
@@ -121,7 +144,12 @@ class UpdateRackhdVersion(object):
 
 
     def _get_RackHD_dir(self):
+        """
+        find the repository RackHD in build dir
+        :return: directory of RackHD
+        """
         repo_list = self.manifest_actions.get_manifest().get_repositories()
+        rackhd_dir = ""
         for repo in repo_list:
             if 'repository' in repo:
                 repo_url = repo['repository']
@@ -131,70 +159,82 @@ class UpdateRackhdVersion(object):
                         rackhd_dir = repo['directory-name']
                     else:
                         rackhd_dir = self.manifest_actions.directory_for_repo(repo)
-                    return rackhd_dir
-            else:
-                print "no way to find basename"
-                sys.exit(1)
-        print "Failed to find repository RackHD at {0}".format(self._manifest_builddir)
-        sys.exit(1)
+
+        if len(rackhd_dir) > 0:
+            return rackhd_dir
+        else:
+            raise RuntimeError("Failed to find repository RackHD at {0}".format(self._manifest_builddir))
 
 
     def generate_RackHD_version(self):
-        rackhd_dir = self._get_RackHD_dir()
-        version_generator = VersionGenerator(rackhd_dir)
+        """
+        generate the version of RackHD
+        :return: a big version like 1.1.1 if the release if official release
+                 a complete version like 1.1.1-rc-20161009123456-abcd123 if the release if daily build
+        """
+        try:
+            rackhd_dir = self._get_RackHD_dir()
+            version_generator = VersionGenerator(rackhd_dir)
+            #generate the big version like:1.1.1
+            big_version = version_generator.generate_big_version()
+            if big_version is None:
+                print "Failed to generate big version for {0}".format(rackhd_dir)
+                sys.exit(1)
+            if self._is_official_release:
+                return big_version
+            else:
+                #generate the candidate version like: devel or rc
+                candidate_version = version_generator.generate_candidate_version()
+                #generate small version like: 20161009123456-abcd123 
+                small_version_generator = VersionGenerator(self._manifest_repo_dir)
+                small_version = small_version_generator.generate_small_version()
+                if big_version is None or candidate_version is None or small_version is None:
+                    print "Failed to generate version for RackHD, Exiting now..."
+                    sys.exit(1)
+                version = "{0}-{1}-{2}".format(big_version, candidate_version, small_version)
+                return version
+        except Exception,e:
+            print "Failed to generate RackHD version due to {0} \n Exiting now...".format(e)
+            sys.exit(1) 
+
+    def generate_package_version(self, repo_dir):
+        """
+        generate the version of a package
+        :param: repo_dir: the directory of the package
+        :return: a big version like 1.1.1 if the release if official release
+                 a complete version like 1.1.1-rc-20161009123456-abcd123 if the release if daily build
+        """
+        repo_name = os.path.basename(repo_dir)
+        #If the repository is on-http, sync the debianstatic/on-http/ to debian before compute version
+        if repo_name == "on-http":
+            cmd_args = ["rsync", "-ar", "debianstatic/on-http/", "debian"]
+            proc = subprocess.Popen(cmd_args,
+                                cwd=repo_dir,
+                                stderr=subprocess.PIPE,
+                                stdout=subprocess.PIPE,
+                                shell=False)
+
+            (out, err) = proc.communicate()
+            if proc.returncode != 0:
+                raise RuntimeError("Failed to sync on-http/debianstatic/on-http to on-http/debian")
+
+        version_generator = VersionGenerator(repo_dir)
         big_version = version_generator.generate_big_version()
         if big_version is None:
-            print "Failed to generate big version for {0}".format(rackhd_dir)
-            sys.exit(1)
+            print "Failed to generate big version, maybe the {0} doesn't contain debian directory".format(repo_dir)
+            return None
+
         if self._is_official_release:
             return big_version
         else:
             candidate_version = version_generator.generate_candidate_version()
-            small_version_generator = VersionGenerator(self._manifest_repo_dir)
-            small_version = small_version_generator.generate_small_version()
+            small_version = version_generator.generate_small_version()
+
             if big_version is None or candidate_version is None or small_version is None:
-                print "Failed to generate version for RackHD, Exiting now..."
-                sys.exit(1)
+                raise RuntimeError("Failed to generate version for {0}, due to the candidate version or small version is None".format(repo_dir))
+
             version = "{0}-{1}-{2}".format(big_version, candidate_version, small_version)
-            return version        
-
-    def generate_package_version(self, repo_dir):
-        try:
-            repo_name = os.path.basename(repo_dir)
-            print repo_name
-            if repo_name == "on-http":
-                cmd_args = ["rsync", "-ar", "debianstatic/on-http/", "debian"]
-                proc = subprocess.Popen(cmd_args,
-                                    cwd=repo_dir,
-                                    stderr=subprocess.PIPE,
-                                    stdout=subprocess.PIPE,
-                                    shell=False)
-
-                (out, err) = proc.communicate()
-                if proc.returncode != 0:
-                    print "Failed to sync on-http/debianstatic/on-http to on-http/debian, exiting now..."
-                    sys.exit(1)
-
-            version_generator = VersionGenerator(repo_dir)
-            big_version = version_generator.generate_big_version()
-            if big_version is None:
-                print "Failed to generate big version, maybe the {0} doesn't contain debian directory".format(repo_dir)
-                return None
-
-            if self._is_official_release:
-                return big_version
-            else:
-                candidate_version = version_generator.generate_candidate_version()
-                small_version = version_generator.generate_small_version()
-
-                if big_version is None or candidate_version is None or small_version is None:
-                    print "Failed to generate version for {0}, Exiting now...".format(repo_dir)
-                    sys.exit(1)
-                version = "{0}-{1}-{2}".format(big_version, candidate_version, small_version)
-                return version                
-        except Exception,e:
-            print e
-            sys.exit(1)
+            return version                
 
     def _get_control_depends(self, control_path):
         """
@@ -213,6 +253,12 @@ class UpdateRackhdVersion(object):
         return None
 
     def _update_dependency(self, debian_dir, version_dict):
+        """
+        update the dependency version of RackHD/debian/control
+        :param: debian_dir: the directory of RackHD/debian
+        :param: version_dict: a dictionay which includes the version of on-xxx
+        :return: None
+        """
         control = os.path.join(debian_dir, "control")
         
         if not os.path.isfile(control):
@@ -231,6 +277,8 @@ class UpdateRackhdVersion(object):
                     package_count += 1
                     is_depends = True
                     new_control_fp.write("Depends: ")
+                    #start to write the dependes
+                    #If the depends is on-xxx, it will be replace with on-xxx (= 1.1...)
                     for package in packages:
                         package_name = package.split(',',)[0].strip()
                         if ' ' in package_name:
@@ -253,33 +301,42 @@ class UpdateRackhdVersion(object):
         os.remove(control)
         os.rename(new_control, control)
 
+    def _generate_version_dict(self):
+        """
+        generate a dictory which includes the version of package on-xxx
+        :return: a dictory
+        """
+        repo_list = self.manifest_actions.get_manifest().get_repositories()
+        version_dict = {}
+        for repo in repo_list:
+            if 'directory-name' in repo:
+                repo_dir = repo['directory-name']
+            else:
+                repo_dir = self.manifest_actions.directory_for_repo(repo)
+
+            version = self.generate_package_version(repo_dir)
+            if version != None:
+                if 'repository' in repo:
+                    repo_url = repo['repository']
+                    repo_name = strip_suffix(os.path.basename(repo_url), ".git")
+                    version_dict[repo_name] = version
+                else:
+                    raise RuntimeError("The repo should be invalid..No way to find repository in {0}".format(json.dumps(repo, indent=True)))
+        if "on-http" in version_dict:
+            version_dict["python-on-http-redfish-1.0"] = version_dict["on-http"]
+            version_dict["python-on-http-api1.1"] = version_dict["on-http"]
+            version_dict["python-on-http-api2.0"] = version_dict["on-http"]
+        return version_dict
 
     def update_RackHD_control(self):
+        """
+        udpate RackHD/debian/control according to manifest
+        :return: None     
+        """
         try:
             rackhd_dir = self._get_RackHD_dir()
             debian_dir = os.path.join(rackhd_dir, "debian")
-
-            repo_list = self.manifest_actions.get_manifest().get_repositories()
-            version_dict = {}
-            for repo in repo_list:
-                if 'directory-name' in repo:
-                    repo_dir = repo['directory-name']
-                else:
-                    repo_dir = self.manifest_actions.directory_for_repo(repo)
-
-                version = self.generate_package_version(repo_dir)
-                if version != None:
-                    if 'repository' in repo:
-                        repo_url = repo['repository']
-                        repo_name = strip_suffix(os.path.basename(repo_url), ".git")
-                        version_dict[repo_name] = version
-                    else:
-                        print "The repo should be invalid..No way to find repository in {0}".format(json.dumps(repo, indent=True))
-                        sys.exit(1)
-            if "on-http" in version_dict:
-                version_dict["python-on-http-redfish-1.0"] = version_dict["on-http"]
-                version_dict["python-on-http-api1.1"] = version_dict["on-http"]
-                version_dict["python-on-http-api2.0"] = version_dict["on-http"]
+            version_dict = self._generate_version_dict()
             self._update_dependency(debian_dir, version_dict)
         except Exception, e:
             print e
@@ -363,6 +420,7 @@ def main():
     # parse arguments
     args = parse_command_line(sys.argv[1:])
 
+    #start to initial an instance of UpdateRackhdVersion
     updater = UpdateRackhdVersion(args.manifest_repo_url, args.manifest_repo_commit, args.manifest_name, args.builddir)
     if args.force:
         updater.set_force(args.force)
@@ -374,6 +432,7 @@ def main():
     if args.git_credential:
         updater.set_git_credentials(args.git_credential)
 
+    #update the RackHD/debian/control according to manifest
     updater.check_builddir()
     updater.clone_manifest()
     RackHD_version = updater.generate_RackHD_version()
@@ -382,6 +441,7 @@ def main():
     if os.path.isfile(args.parameter_file):  # Delete existing parameter file
         os.remove(args.parameter_file)
 
+    # write parameters to parameter file
     downstream_parameters = {}
     downstream_parameters['RACKHD_VERSION'] = RackHD_version
     write_downstream_parameters(args.parameter_file, downstream_parameters)
